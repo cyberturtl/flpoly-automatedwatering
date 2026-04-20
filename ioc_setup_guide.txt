@@ -1,0 +1,324 @@
+================================================================================
+  STM32CubeIDE .IOC FILE SETUP GUIDE
+  Automated Irrigation System — Nucleo F446RE
+================================================================================
+
+This guide walks through every setting you need to configure inside the
+STM32CubeIDE .ioc file (Pinout & Configuration view) to match the firmware
+in main.c. Follow each section in order before generating code.
+
+
+--------------------------------------------------------------------------------
+  STEP 1 — OPEN THE .IOC FILE
+--------------------------------------------------------------------------------
+
+1. In STM32CubeIDE, double-click your .ioc file in the Project Explorer.
+2. The "Pinout & Configuration" tab will open.
+3. Make sure you are on the "Pinout view" tab (the chip diagram) to start.
+
+
+--------------------------------------------------------------------------------
+  STEP 2 — SYSTEM CORE
+--------------------------------------------------------------------------------
+
+Navigate to: Pinout & Configuration > System Core > RCC
+
+  High Speed Clock (HSE) : Disable
+  Low Speed Clock (LSE)  : Disable
+
+  (The firmware uses the internal HSI oscillator via PLL — no external crystal
+  is required on the Nucleo F446RE.)
+
+Navigate to: Pinout & Configuration > System Core > SYS
+
+  Debug : Serial Wire
+  Timebase Source : SysTick   (leave as default)
+
+
+--------------------------------------------------------------------------------
+  STEP 3 — CLOCK CONFIGURATION
+--------------------------------------------------------------------------------
+
+Click the "Clock Configuration" tab at the top.
+
+Set the following values to match the SystemClock_Config() in main.c:
+
+  Input frequency     : 16 MHz  (HSI)
+  PLL Source Mux      : HSI
+  PLLM                : 16
+  PLLN                : 336
+  PLLP                : 2  (results in 168 MHz VCO / 2 = 84 MHz SYSCLK — but
+                             PLLP div is set to /4 in code giving 84 MHz)
+  PLLP divider        : /4
+  System Clock Mux    : PLLCLK
+  AHB Prescaler       : /1   -> HCLK  = 84 MHz
+  APB1 Prescaler      : /2   -> PCLK1 = 42 MHz  (TIM2 clock = 84 MHz)
+  APB2 Prescaler      : /1   -> PCLK2 = 84 MHz
+
+  Flash Latency will auto-set to 2 WS — leave it.
+
+  NOTE: TIM2 sits on the APB1 bus. Because APB1 prescaler is /2, the TIM2
+  input clock is doubled to 84 MHz by the hardware multiplier. The prescaler
+  and period values in MX_TIM2_Init() are calculated against this 84 MHz.
+
+
+--------------------------------------------------------------------------------
+  STEP 4 — GPIO PIN ASSIGNMENTS (Pinout View)
+--------------------------------------------------------------------------------
+
+Click each pin on the chip diagram and assign the listed function.
+Alternatively, use the search bar in Pinout view to find each pin by name.
+
+  PIN    FUNCTION              LABEL TO SET (User Label field)
+  -----  --------------------  -----------------------------------------------
+  PA0    ADC1_IN0              (leave blank — configured via ADC peripheral)
+  PA1    GPIO_Output           RELAY
+  PA2    USART2_TX             (auto-assigned when USART2 is enabled)
+  PA3    USART2_RX             (auto-assigned when USART2 is enabled)
+  PA4    GPIO_EXTI4            BTN
+  PB4    GPIO_Output           LCD_D4
+  PB5    GPIO_Output           LCD_D5
+  PB6    GPIO_Output           LCD_D6
+  PB7    GPIO_Output           LCD_D7
+  PB8    GPIO_Output           LCD_RS
+  PB9    GPIO_Output           LCD_EN
+
+  The following pins are pre-configured on the Nucleo board — do NOT change:
+  PA5    GPIO_Output           LD2  (onboard green LED)
+  PC13   GPIO_EXTI13           B1   (onboard blue user button)
+
+
+--------------------------------------------------------------------------------
+  STEP 5 — GPIO PIN SETTINGS (Configuration Panel)
+--------------------------------------------------------------------------------
+
+After assigning pins, click each one to set its properties in the
+"GPIO" configuration panel on the left.
+
+  PA1 — RELAY output
+    GPIO mode        : Output Push Pull
+    GPIO Pull-up/Pull-down : No pull-up and no pull-down
+    Maximum output speed   : Low
+    User Label             : RELAY
+
+  PA4 — Manual override button (active-LOW, internal pull-up)
+    GPIO mode        : External Interrupt Mode with Falling edge trigger detection
+    GPIO Pull-up/Pull-down : Pull-up
+    User Label             : BTN
+
+  PB4, PB5, PB6, PB7, PB8, PB9 — LCD outputs
+    GPIO mode        : Output Push Pull
+    GPIO Pull-up/Pull-down : No pull-up and no pull-down
+    Maximum output speed   : Low
+    (Set user labels LCD_D4 through LCD_D7, LCD_RS, LCD_EN respectively)
+
+
+--------------------------------------------------------------------------------
+  STEP 6 — ADC1
+--------------------------------------------------------------------------------
+
+Navigate to: Pinout & Configuration > Analog > ADC1
+
+  Mode:
+    IN0 Single-Ended : ENABLE   (this will auto-assign PA0 as ADC1_IN0)
+
+  Configuration > Parameter Settings:
+    Clock Prescaler          : PCLK2 divided by 4
+    Resolution               : 12 bits (15 ADC Clock cycles)
+    Data Alignment           : Right alignment
+    Scan Conversion Mode     : Disabled
+    Continuous Conversion Mode : Disabled
+    Discontinuous Conversion Mode : Disabled
+    DMA Continuous Requests  : Disabled
+    End Of Conversion Selection : EOC flag at the end of single channel conversion
+    Number Of Conversion     : 1
+
+  Configuration > Parameter Settings > Rank 1:
+    Channel         : Channel 0
+    Sampling Time   : 480 Cycles   (long sample time for noise immunity)
+    Rank            : 1
+
+  Configuration > DMA Settings:
+    (Leave empty — no DMA used, polling mode only)
+
+  Configuration > NVIC Settings:
+    ADC1, ADC2 and ADC3 global interrupts : DISABLED
+    (We use polling, not interrupts, for ADC)
+
+
+--------------------------------------------------------------------------------
+  STEP 7 — TIM2
+--------------------------------------------------------------------------------
+
+Navigate to: Pinout & Configuration > Timers > TIM2
+
+  Mode:
+    Clock Source : Internal Clock
+
+  Configuration > Parameter Settings:
+    Prescaler (PSC - 16 bits value)        : 8399
+    Counter Mode                           : Up
+    Counter Period (AutoReload Register)   : 4999
+    Internal Clock Division (CKD)         : No Division
+    auto-reload preload                    : Enable
+
+  Calculation reference:
+    TIM2 clock = 84 MHz
+    Tick period = 84,000,000 / (8399 + 1) = 10,000 Hz = 100 us per tick
+    Interrupt period = 100 us x (4999 + 1) = 500 ms
+
+  NOTE: The firmware sets Period to 1999 at runtime for 200ms sampling.
+  You can set the CubeMX default to either value — the code overrides it
+  in MX_TIM2_Init() at startup anyway.
+
+  Configuration > NVIC Settings:
+    TIM2 global interrupt : ENABLED
+    Preemption Priority   : 1
+    Sub Priority          : 0
+
+
+--------------------------------------------------------------------------------
+  STEP 8 — USART2
+--------------------------------------------------------------------------------
+
+Navigate to: Pinout & Configuration > Connectivity > USART2
+
+  Mode:
+    Mode         : Asynchronous
+    Hardware Flow Control : Disable
+
+  Configuration > Parameter Settings:
+    Baud Rate         : 115200 Bits/s
+    Word Length       : 8 Bits (including Parity)
+    Parity            : None
+    Stop Bits         : 1
+    Data Direction    : Receive and Transmit
+    Over Sampling     : 16 Samples
+
+  Configuration > NVIC Settings:
+    USART2 global interrupt : DISABLED
+    (We use blocking HAL_UART_Transmit — no interrupt needed)
+
+  PA2 and PA3 will auto-assign as USART2_TX and USART2_RX.
+  On the Nucleo F446RE these route through the ST-Link chip to your PC's
+  USB virtual COM port — no extra USB-UART adapter needed.
+
+
+--------------------------------------------------------------------------------
+  STEP 9 — NVIC (Interrupt Controller)
+--------------------------------------------------------------------------------
+
+Navigate to: Pinout & Configuration > System Core > NVIC
+
+Enable and set priorities for the following interrupts:
+
+  INTERRUPT                          ENABLED   PREEMPT   SUB
+  ---------------------------------  -------   -------   ---
+  TIM2 global interrupt              Yes       1         0
+  EXTI line 4 interrupt              Yes       2         0
+  EXTI line[15:10] interrupt         Yes       2         0
+  (covers PC13 / onboard B1 button)
+
+  Leave all others at their defaults.
+
+  Priority notes:
+  - TIM2 is priority 1 (higher) so the 200ms tick is never delayed by
+    button handling.
+  - Both EXTI lines share priority 2 — they won't preempt the timer ISR.
+  - Systick remains at priority 0 (highest) by default — do not change it.
+
+
+--------------------------------------------------------------------------------
+  STEP 10 — GENERATE CODE
+--------------------------------------------------------------------------------
+
+1. Save the .ioc file (Ctrl+S).
+2. A dialog will ask if you want to generate code — click YES.
+3. CubeIDE will regenerate main.c and the peripheral init files.
+
+IMPORTANT: CubeIDE will OVERWRITE main.c with a blank template when it
+regenerates. You must paste your firmware code back into the
+USER CODE BEGIN / USER CODE END sections after generation.
+
+To avoid losing your code:
+  - Keep a backup copy of your completed main.c before generating.
+  - Only paste code inside the USER CODE BEGIN / END comment blocks —
+    CubeIDE preserves these regions during regeneration and will not
+    overwrite them.
+
+
+--------------------------------------------------------------------------------
+  STEP 11 — VERIFY PINOUT AFTER GENERATION
+--------------------------------------------------------------------------------
+
+After code generation, open main.c and confirm the following init calls
+appear inside main() in this order:
+
+  MX_GPIO_Init();
+  MX_USART2_UART_Init();
+  MX_ADC1_Init();
+  MX_TIM2_Init();
+
+If any are missing, check that the corresponding peripheral was enabled
+in the .ioc file and regenerate.
+
+Also confirm that stm32f4xx_it.c contains handler functions for:
+
+  TIM2_IRQHandler      -> calls HAL_TIM_IRQHandler(&htim2)
+  EXTI4_IRQHandler     -> calls HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_4)
+  EXTI15_10_IRQHandler -> calls HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13)
+
+These are auto-generated by CubeIDE when the NVIC settings are correct.
+
+
+--------------------------------------------------------------------------------
+  QUICK REFERENCE — PIN SUMMARY
+--------------------------------------------------------------------------------
+
+  PA0   ADC1_IN0      Soil sensor analog output (AOUT)
+  PA1   GPIO Output   Relay module IN pin
+  PA2   USART2_TX     Serial transmit (ST-Link -> PuTTY)
+  PA3   USART2_RX     Serial receive
+  PA4   EXTI4         Manual override button (active-LOW, pull-up)
+  PA5   GPIO Output   LD2 onboard LED (pump state indicator)
+  PB4   GPIO Output   LCD D4
+  PB5   GPIO Output   LCD D5
+  PB6   GPIO Output   LCD D6
+  PB7   GPIO Output   LCD D7
+  PB8   GPIO Output   LCD RS (Register Select)
+  PB9   GPIO Output   LCD EN (Enable)
+  PC13  EXTI13        B1 onboard blue button (also triggers override)
+
+  3.3V  ->  Soil sensor VCC
+  5V    ->  DO NOT use for relay coil (use external 5V supply)
+  GND   ->  Common ground rail (Nucleo + relay PSU + pump PSU all share this)
+
+
+--------------------------------------------------------------------------------
+  COMMON MISTAKES TO AVOID
+--------------------------------------------------------------------------------
+
+1. NOT sharing GND between power supplies.
+   The relay coil PSU and pump PSU must share a common ground with the
+   Nucleo GND rail or signals will not reference correctly.
+
+2. Setting PA4 as GPIO_Input instead of GPIO_EXTI4.
+   The button needs an external interrupt line, not a polled input.
+   Make sure "External Interrupt Mode with Falling edge" is selected.
+
+3. Forgetting to enable TIM2 global interrupt in NVIC settings.
+   Without this, HAL_TIM_Base_Start_IT() will start the timer but the
+   ISR will never fire and nothing will happen.
+
+4. Using the wrong ADC sampling time.
+   480 cycles is intentionally long to filter noise from the capacitive
+   sensor signal. Do not reduce this value.
+
+5. Regenerating code without backing up main.c first.
+   CubeIDE replaces main.c on every code generation. Always keep a copy
+   of your working firmware before hitting Generate Code.
+
+
+================================================================================
+  END OF GUIDE
+================================================================================
