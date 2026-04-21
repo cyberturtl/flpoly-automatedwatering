@@ -8,7 +8,6 @@ It includes the following:
 - Final demo presentation
 - Technical report
 - Demo video
-- Pictures of my build
 - main.c code for the Nucleo-F446RE
 - .ioc file setup guide
 
